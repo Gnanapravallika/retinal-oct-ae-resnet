@@ -45,6 +45,21 @@ def train_model(model_name: str = "ae-resnet", csv_path: str = None, epochs: int
         
     raw_df = pd.read_csv(csv_path)
     df = auto_detect_columns(raw_df)
+    
+    # Correct Windows-format paths dynamically in trainer.py
+    drive_base = "/content/drive/MyDrive"
+    if len(df) > 0 and not os.path.exists(df.iloc[0]['image_path']):
+        def convert_path_to_colab(win_path):
+            linux_path = win_path.replace("\\", "/")
+            if "OCTDL/" in linux_path:
+                relative_path = linux_path[linux_path.find("OCTDL/"):]
+            elif "OCTID/" in linux_path:
+                relative_path = linux_path[linux_path.find("OCTID/"):]
+            else:
+                relative_path = "/".join(linux_path.split("/")[-3:])
+            return os.path.join(drive_base, relative_path)
+        df['image_path'] = df['image_path'].apply(convert_path_to_colab)
+        
     train_df, val_df, _ = patient_level_split(df)
     
     train_transform = RetinalPipelineTransform(is_training=True)
