@@ -105,3 +105,5 @@ build_final_notebook.py
 build_frozen_notebook.py
 check_dataset.py
 check_all_datasets.py
+*.zip
+

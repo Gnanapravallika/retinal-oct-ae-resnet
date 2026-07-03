@@ -91,10 +91,13 @@ def train_model(model_name: str = "ae-resnet", csv_path: str = None, epochs: int
     model = get_model_architecture(model_name, num_classes=7, pretrained=True).to(device)
     
     criterion = nn.CrossEntropyLoss()
-    optimizer = optim.Adam(model.parameters(), lr=1e-5)
+    optimizer = optim.Adam(model.parameters(), lr=1e-5, weight_decay=1e-4)
     
     print(f"Training {model_name} for {epochs} epochs on {device}...")
     best_val_acc = 0.0
+    best_val_loss = float('inf')
+    patience = 5
+    patience_counter = 0
     os.makedirs("models", exist_ok=True)
     
     for epoch in range(1, epochs + 1):
@@ -133,9 +136,20 @@ def train_model(model_name: str = "ae-resnet", csv_path: str = None, epochs: int
         
         print(f"Epoch {epoch}/{epochs} | Loss: {epoch_loss:.4f} Acc: {epoch_acc:.4f} | Val Loss: {epoch_val_loss:.4f} Acc: {epoch_val_acc:.4f}")
         
+        # Early stopping check based on validation loss
+        if epoch_val_loss < best_val_loss:
+            best_val_loss = epoch_val_loss
+            patience_counter = 0
+        else:
+            patience_counter += 1
+            
         if epoch_val_acc > best_val_acc:
             best_val_acc = epoch_val_acc
             torch.save(model.state_dict(), f"models/{model_name}_best.pth")
             print(f"\u2705 Best model updated! Val Acc: {best_val_acc:.4f}")
+            
+        if patience_counter >= patience:
+            print(f"Early stopping triggered at Epoch {epoch} due to validation loss plateau.")
+            break
             
     print(f"Training Complete. Best Validation Accuracy for {model_name}: {best_val_acc:.4f}")

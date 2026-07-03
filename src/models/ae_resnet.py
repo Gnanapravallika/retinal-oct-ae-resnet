@@ -73,6 +73,7 @@ class AEResNet(nn.Module):
         self.csa3 = ChannelSpatialAttention(in_planes=1024)
         self.csa4 = ChannelSpatialAttention(in_planes=2048)
         self.avgpool = backbone.avgpool
+        self.dropout = nn.Dropout(p=0.5)
         self.fc = nn.Linear(2048, num_classes)
         
     def forward(self, x: torch.Tensor) -> torch.Tensor:
@@ -83,6 +84,7 @@ class AEResNet(nn.Module):
         x = self.csa4(self.layer4(x))
         x = self.avgpool(x)
         x = torch.flatten(x, 1)
+        x = self.dropout(x)
         x = self.fc(x)
         return x
 

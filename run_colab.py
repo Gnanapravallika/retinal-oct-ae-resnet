@@ -128,6 +128,7 @@ class AEResNet(nn.Module):
         self.csa3 = ChannelSpatialAttention(in_planes=1024)
         self.csa4 = ChannelSpatialAttention(in_planes=2048)
         self.avgpool = backbone.avgpool
+        self.dropout = nn.Dropout(p=0.5)
         self.fc = nn.Linear(2048, num_classes)
 
     def forward(self, x):
@@ -137,6 +138,7 @@ class AEResNet(nn.Module):
         x = self.csa3(self.layer3(x))
         x = self.csa4(self.layer4(x))
         x = self.avg_pool_flatten(x)
+        x = self.dropout(x)
         return self.fc(x)
 
     def avg_pool_flatten(self, x):
@@ -469,10 +471,13 @@ def main(csv_path: str = None, epochs: int = 25):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model = AEResNet(num_classes=7, pretrained=True).to(device)
     criterion = nn.CrossEntropyLoss(weight=class_weights.to(device))
-    optimizer = optim.Adam(model.parameters(), lr=1e-5)
+    optimizer = optim.Adam(model.parameters(), lr=1e-5, weight_decay=1e-4)
     
     print(f"Training AE-ResNet for {epochs} epochs on {device}...")
     best_val_acc = 0.0
+    best_val_loss = float('inf')
+    patience = 5
+    patience_counter = 0
     os.makedirs("models", exist_ok=True)
     
     for epoch in range(1, epochs + 1):
@@ -508,10 +513,22 @@ def main(csv_path: str = None, epochs: int = 25):
         epoch_val_loss, epoch_val_acc = val_loss / val_total, val_correct / val_total
         print(f"Epoch {epoch}/{epochs} | Loss: {epoch_loss:.4f} Acc: {epoch_acc:.4f} | Val Loss: {epoch_val_loss:.4f} Acc: {epoch_val_acc:.4f}")
         
+        # Early stopping check based on validation loss
+        if epoch_val_loss < best_val_loss:
+            best_val_loss = epoch_val_loss
+            patience_counter = 0
+        else:
+            pvariance_counter = patience_counter + 1
+            patience_counter = pvariance_counter
+            
         if epoch_val_acc > best_val_acc:
             best_val_acc = epoch_val_acc
             torch.save(model.state_dict(), "models/ae_resnet_baseline.pth")
             print(f"\u2705 Best model updated! Val Acc: {best_val_acc:.4f}")
+            
+        if patience_counter >= patience:
+            print(f"Early stopping triggered at Epoch {epoch} due to validation loss plateau.")
+            break
             
     print(f"Training Complete. Best Validation Accuracy: {best_val_acc:.4f}")
 
