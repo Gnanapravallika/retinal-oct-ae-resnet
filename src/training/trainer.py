@@ -90,7 +90,7 @@ def train_model(model_name: str = "ae-resnet", csv_path: str = None, epochs: int
     from src.models.ae_resnet import get_model_architecture
     model = get_model_architecture(model_name, num_classes=7, pretrained=True).to(device)
     
-    criterion = nn.CrossEntropyLoss(weight=class_weights.to(device))
+    criterion = nn.CrossEntropyLoss()
     optimizer = optim.Adam(model.parameters(), lr=1e-5)
     
     print(f"Training {model_name} for {epochs} epochs on {device}...")
