@@ -53,7 +53,13 @@ def train_model(model_name: str = "ae-resnet", csv_path: str = None, epochs: int
     train_dataset = RetinalDataset(train_df, transform=train_transform)
     val_dataset = RetinalDataset(val_df, transform=val_transform)
     
-    class_counts = train_df['label'].value_counts().sort_index().values
+    # Calculate class weights robustly for 7 classes to avoid index out of bounds
+    class_counts = np.zeros(7)
+    for label, count in train_df['label'].value_counts().items():
+        class_counts[int(label)] = count
+    
+    # Avoid division by zero
+    class_counts = np.maximum(class_counts, 1)
     class_weights = 1.0 / class_counts
     class_weights = torch.FloatTensor(class_weights)
     
