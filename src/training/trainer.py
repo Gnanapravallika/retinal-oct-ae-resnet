@@ -35,9 +35,9 @@ def run_training_simulation():
     torch.save(model.state_dict(), "models/ae_resnet_baseline.pth")
     print("Weights saved mock to models/ae_resnet_baseline.pth")
 
-def train_model(csv_path: str = None, epochs: int = 25, batch_size: int = 16):
+def train_model(model_name: str = "ae-resnet", csv_path: str = None, epochs: int = 25, batch_size: int = 16):
     """
-    Main training interface with dynamic CSV column detection.
+    Main training interface supporting dynamic model selection and inverse frequency sampling.
     """
     if csv_path is None or not os.path.exists(csv_path):
         run_training_simulation()
@@ -64,11 +64,15 @@ def train_model(csv_path: str = None, epochs: int = 25, batch_size: int = 16):
     val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False, num_workers=2)
     
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    model = AEResNet(num_classes=7, pretrained=True).to(device)
+    
+    # Load model dynamically by name
+    from src.models.ae_resnet import get_model_architecture
+    model = get_model_architecture(model_name, num_classes=7, pretrained=True).to(device)
+    
     criterion = nn.CrossEntropyLoss(weight=class_weights.to(device))
     optimizer = optim.Adam(model.parameters(), lr=1e-5)
     
-    print(f"Training AE-ResNet for {epochs} epochs on {device}...")
+    print(f"Training {model_name} for {epochs} epochs on {device}...")
     best_val_acc = 0.0
     os.makedirs("models", exist_ok=True)
     
@@ -110,7 +114,7 @@ def train_model(csv_path: str = None, epochs: int = 25, batch_size: int = 16):
         
         if epoch_val_acc > best_val_acc:
             best_val_acc = epoch_val_acc
-            torch.save(model.state_dict(), "models/ae_resnet_baseline.pth")
+            torch.save(model.state_dict(), f"models/{model_name}_best.pth")
             print(f"\u2705 Best model updated! Val Acc: {best_val_acc:.4f}")
             
-    print(f"Training Complete. Best Validation Accuracy: {best_val_acc:.4f}")
+    print(f"Training Complete. Best Validation Accuracy for {model_name}: {best_val_acc:.4f}")
