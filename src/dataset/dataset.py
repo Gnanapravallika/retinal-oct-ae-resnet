@@ -7,7 +7,7 @@ from torch.utils.data import Dataset
 from PIL import Image
 from src.preprocessing.standardizer import load_and_preprocess_scan
 
-CLASSES = ["AMD", "DME", "ERM", "Normal", "RAO", "RVO", "VID"]
+CLASSES = ["AMD", "DME", "ERM", "NO", "RAO", "RVO", "VID"]
 CLASS_TO_IDX = {cls.lower(): idx for idx, cls in enumerate(CLASSES)}
 
 class RetinalDataset(Dataset):
