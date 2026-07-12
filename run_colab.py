@@ -326,16 +326,51 @@ class RetinalDataset(Dataset):
         return img, label
 
 def patient_level_split(df: pd.DataFrame, train_ratio=0.70, val_ratio=0.15, test_ratio=0.15) -> tuple:
-    unique_patients = df['patient_id'].unique()
+    """
+    Enforces strict stratified patient-level split (70:15:15) to prevent training data leakage
+    and guarantee that small classes have representation in train, validation, and test sets.
+    """
     np.random.seed(42)
-    np.random.shuffle(unique_patients)
-    n_total = len(unique_patients)
-    n_train = int(n_total * train_ratio)
-    n_val = int(n_total * val_ratio)
-    train_patients = set(unique_patients[:n_train])
-    val_patients = set(unique_patients[n_train:n_train + n_val])
-    test_patients = set(unique_patients[n_train + n_val:])
-    return df[df['patient_id'].isin(train_patients)], df[df['patient_id'].isin(val_patients)], df[df['patient_id'].isin(test_patients)]
+    
+    train_patients = set()
+    val_patients = set()
+    test_patients = set()
+    
+    for label in sorted(df['label'].unique()):
+        label_df = df[df['label'] == label]
+        unique_pts = label_df['patient_id'].unique()
+        np.random.shuffle(unique_pts)
+        
+        n_pts = len(unique_pts)
+        if n_pts >= 3:
+            # Guarantee at least 1 patient in each split
+            train_patients.add(unique_pts[0])
+            val_patients.add(unique_pts[1])
+            test_patients.add(unique_pts[2])
+            
+            # Distribute remaining
+            remaining = unique_pts[3:]
+            n_rem = len(remaining)
+            n_tr = int(n_rem * train_ratio)
+            n_vl = int(n_rem * val_ratio)
+            
+            train_patients.update(remaining[:n_tr])
+            val_patients.update(remaining[n_tr:n_tr+n_vl])
+            test_patients.update(remaining[n_tr+n_vl:])
+        else:
+            for i, pt in enumerate(unique_pts):
+                if i % 3 == 0:
+                    train_patients.add(pt)
+                elif i % 3 == 1:
+                    val_patients.add(pt)
+                else:
+                    test_patients.add(pt)
+                    
+    train_df = df[df['patient_id'].isin(train_patients)]
+    val_df = df[df['patient_id'].isin(val_patients)]
+    test_df = df[df['patient_id'].isin(test_patients)]
+    
+    return train_df, val_df, test_df
 
 def auto_detect_columns(df: pd.DataFrame) -> pd.DataFrame:
     cols = df.columns
