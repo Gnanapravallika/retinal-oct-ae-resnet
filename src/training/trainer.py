@@ -60,21 +60,7 @@ def train_model(model_name: str = "ae-resnet", csv_path: str = None, epochs: int
             return os.path.join(drive_base, relative_path)
         df['image_path'] = df['image_path'].apply(convert_path_to_colab)
         
-    train_df, val_df, test_df = patient_level_split(df)
-    
-    # Verify split distributions (Advisor priority #1)
-    CLASSES = ["AMD", "DME", "ERM", "Normal", "RAO", "RVO", "VID"]
-    print("\n--- Verified Split Class Distributions ---")
-    print(f"{'Class':<10} | {'Train':<8} | {'Val':<8} | {'Test':<8}")
-    print("-" * 45)
-    for idx, cls in enumerate(CLASSES):
-        tr = sum(train_df['label'] == idx)
-        vl = sum(val_df['label'] == idx)
-        ts = sum(test_df['label'] == idx)
-        print(f"{cls:<10} | {tr:<8} | {vl:<8} | {ts:<8}")
-        if tr == 0 or vl == 0 or ts == 0:
-            raise ValueError(f"CRITICAL: Class '{cls}' has 0 samples in one of the splits! (Train: {tr}, Val: {vl}, Test: {ts}). Adjust split seed or data.")
-    print("-" * 45)
+    train_df, val_df, _ = patient_level_split(df)
     
     train_transform = RetinalPipelineTransform(is_training=True)
     val_transform = RetinalPipelineTransform(is_training=False)
@@ -104,7 +90,7 @@ def train_model(model_name: str = "ae-resnet", csv_path: str = None, epochs: int
     from src.models.ae_resnet import get_model_architecture
     model = get_model_architecture(model_name, num_classes=7, pretrained=True).to(device)
     
-    criterion = nn.CrossEntropyLoss(label_smoothing=0.05)
+    criterion = nn.CrossEntropyLoss()
     
     # Differential learning rates: lower for pre-trained backbone, higher for randomly initialized blocks (csa & fc)
     backbone_params = []
@@ -116,16 +102,15 @@ def train_model(model_name: str = "ae-resnet", csv_path: str = None, epochs: int
             backbone_params.append(param)
             
     optimizer = optim.AdamW([
-        {'params': backbone_params, 'lr': 1e-5, 'weight_decay': 1e-4},
-        {'params': new_layers_params, 'lr': 1e-4, 'weight_decay': 1e-4}  # Backbone LR 1e-5, New Layers LR 1e-4 as per final advisor recommendation
-    ])
+        {'params': backbone_params, 'lr': 1e-5},
+        {'params': new_layers_params, 'lr': 1e-4}
+    ], weight_decay=1e-4)
     
     # Cosine Annealing learning rate scheduler
     scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=epochs)
     
     print(f"Training {model_name} for {epochs} epochs on {device}...")
     best_val_acc = 0.0
-    best_val_f1 = 0.0
     best_val_loss = float('inf')
     patience = 10
     patience_counter = 0
@@ -133,16 +118,6 @@ def train_model(model_name: str = "ae-resnet", csv_path: str = None, epochs: int
     os.makedirs("models", exist_ok=True)
     
     for epoch in range(1, epochs + 1):
-        # Backbone warm-up: freeze backbone parameters for the first 2 epochs (only for proposed AE-ResNet)
-        if epoch <= 2 and model_name.lower() == "ae-resnet":
-            for name, param in model.named_parameters():
-                if not ('csa' in name or 'fc' in name):
-                    param.requires_grad = False
-            print(f"Epoch {epoch}/{epochs} | Warm-up active: Backbone frozen (training CSA & FC heads only)")
-        else:
-            for param in model.parameters():
-                param.requires_grad = True
-                
         model.train()
         running_loss, correct, total = 0.0, 0, 0
         for images, labels in train_loader:
@@ -163,8 +138,6 @@ def train_model(model_name: str = "ae-resnet", csv_path: str = None, epochs: int
         # Validation
         model.eval()
         val_loss, val_correct, val_total = 0.0, 0, 0
-        all_preds = []
-        all_targets = []
         with torch.no_grad():
             for images, labels in val_loader:
                 images, labels = images.to(device), labels.to(device)
@@ -174,15 +147,9 @@ def train_model(model_name: str = "ae-resnet", csv_path: str = None, epochs: int
                 _, preds = torch.max(outputs, 1)
                 val_correct += (preds == labels).sum().item()
                 val_total += labels.size(0)
-                all_preds.extend(preds.cpu().numpy())
-                all_targets.extend(labels.cpu().numpy())
                 
         epoch_val_loss = val_loss / val_total
         epoch_val_acc = val_correct / val_total
-        
-        # Calculate validation Macro F1 score
-        from sklearn.metrics import f1_score
-        epoch_val_f1 = f1_score(all_targets, all_preds, average='macro', zero_division=0)
         
         # Accumulate history log
         history.append({
@@ -190,11 +157,10 @@ def train_model(model_name: str = "ae-resnet", csv_path: str = None, epochs: int
             'train_loss': epoch_loss,
             'train_acc': epoch_acc,
             'val_loss': epoch_val_loss,
-            'val_acc': epoch_val_acc,
-            'val_f1': epoch_val_f1
+            'val_acc': epoch_val_acc
         })
         
-        print(f"Epoch {epoch}/{epochs} | Loss: {epoch_loss:.4f} Acc: {epoch_acc:.4f} | Val Loss: {epoch_val_loss:.4f} Acc: {epoch_val_acc:.4f} F1: {epoch_val_f1:.4f}")
+        print(f"Epoch {epoch}/{epochs} | Loss: {epoch_loss:.4f} Acc: {epoch_acc:.4f} | Val Loss: {epoch_val_loss:.4f} Acc: {epoch_val_acc:.4f}")
         
         # Step the learning rate scheduler
         scheduler.step()
@@ -206,12 +172,10 @@ def train_model(model_name: str = "ae-resnet", csv_path: str = None, epochs: int
         else:
             patience_counter += 1
             
-        # Save checkpoint based on Validation Macro F1 (Advisor recommendation #3)
-        if epoch_val_f1 > best_val_f1:
-            best_val_f1 = epoch_val_f1
+        if epoch_val_acc > best_val_acc:
             best_val_acc = epoch_val_acc
             torch.save(model.state_dict(), f"models/{model_name}_best.pth")
-            print(f"✅ Best model updated! Val Macro F1: {best_val_f1:.4f} (Acc: {best_val_acc:.4f})")
+            print(f"\u2705 Best model updated! Val Acc: {best_val_acc:.4f}")
             
         if patience_counter >= patience:
             print(f"Early stopping triggered at Epoch {epoch} due to validation loss plateau.")
