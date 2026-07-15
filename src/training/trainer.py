@@ -104,7 +104,7 @@ def train_model(model_name: str = "ae-resnet", csv_path: str = None, epochs: int
     from src.models.ae_resnet import get_model_architecture
     model = get_model_architecture(model_name, num_classes=7, pretrained=True).to(device)
     
-    criterion = nn.CrossEntropyLoss()
+    criterion = nn.CrossEntropyLoss(label_smoothing=0.1)
     
     # Differential learning rates: lower for pre-trained backbone, higher for randomly initialized blocks
     if model_name.lower() == "ae-resnet":
