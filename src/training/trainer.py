@@ -11,15 +11,17 @@ from src.models.ae_resnet import AEResNet
 from src.dataset.dataset import RetinalDataset, patient_level_split, auto_detect_columns
 from src.preprocessing.standardizer import RetinalPipelineTransform
 
-def print_split_distributions(train_df, val_df, classes=7):
+def print_split_distributions(train_df, val_df, test_df=None):
+    class_names = {0: 'AMD', 1: 'DME', 2: 'ERM', 3: 'Normal', 4: 'RAO', 5: 'RVO', 6: 'VID'}
     print("\n--- Split Class Distributions ---")
-    print(f"{'Class':<10} | {'Train':<8} | {'Val':<8}")
-    print("-" * 35)
-    for idx in range(classes):
+    print(f"{'Class':<10} | {'Train':<8} | {'Val':<8} | {'Test':<8}")
+    print("-" * 45)
+    for idx, name in class_names.items():
         tr = sum(train_df['label'] == idx)
         vl = sum(val_df['label'] == idx)
-        print(f"{idx:<10} | {tr:<8} | {vl:<8}")
-    print("-" * 35)
+        ts = sum(test_df['label'] == idx) if test_df is not None else 0
+        print(f"{name:<10} | {tr:<8} | {vl:<8} | {ts:<8}")
+    print("-" * 45)
 
 def run_training_simulation():
     """
@@ -71,8 +73,8 @@ def train_model(model_name: str = "ae-resnet", csv_path: str = None, epochs: int
             return os.path.join(drive_base, relative_path)
         df['image_path'] = df['image_path'].apply(convert_path_to_colab)
         
-    train_df, val_df, _ = patient_level_split(df)
-    print_split_distributions(train_df, val_df)
+    train_df, val_df, test_df = patient_level_split(df)
+    print_split_distributions(train_df, val_df, test_df)
     
     train_transform = RetinalPipelineTransform(is_training=True)
     val_transform = RetinalPipelineTransform(is_training=False)
