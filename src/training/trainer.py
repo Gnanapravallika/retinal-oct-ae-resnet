@@ -221,4 +221,4 @@ def train_model(model_name: str = "ae-resnet", csv_path: str = None, epochs: int
     history_df = pd.DataFrame(history)
     history_df.to_csv(f"results/logs/{model_name}_history.csv", index=False)
     print(f"Saved training history to results/logs/{model_name}_history.csv")
-    print(f"Training Complete. Best Validation Accuracy for {model_name}: {best_val_acc:.4f}")
+    print(f"Training Complete. Best Validation Macro F1 for {model_name}: {best_val_f1:.4f}")
