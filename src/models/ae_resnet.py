@@ -70,8 +70,13 @@ class AEResNet(nn.Module):
         self.layer3 = backbone.layer3
         self.layer4 = backbone.layer4
         
-        self.csa3 = ChannelSpatialAttention(in_planes=1024)
-        self.csa4 = ChannelSpatialAttention(in_planes=2048)
+        # Multi-scale Feature Fusion: downsample and project layer3 (1024, 14x14) to match layer4 (2048, 7x7)
+        self.fusion_conv = nn.Sequential(
+            nn.Conv2d(1024, 2048, kernel_size=1, stride=2, bias=False),
+            nn.BatchNorm2d(2048)
+        )
+        
+        self.csa_fused = ChannelSpatialAttention(in_planes=2048)
         self.avgpool = backbone.avgpool
         self.dropout = nn.Dropout(p=0.5)
         self.fc = nn.Linear(2048, num_classes)
@@ -80,8 +85,16 @@ class AEResNet(nn.Module):
         x = self.maxpool(self.relu(self.bn1(self.conv1(x))))
         x = self.layer1(x)
         x = self.layer2(x)
-        x = self.csa3(self.layer3(x))
-        x = self.csa4(self.layer4(x))
+        x3 = self.layer3(x)
+        x4 = self.layer4(x3)
+        
+        # Multi-scale Feature Fusion
+        x3_down = self.fusion_conv(x3)
+        x_fused = self.relu(x4 + x3_down)
+        
+        # Selective Channel-Spatial Attention after fusion
+        x = self.csa_fused(x_fused)
+        
         x = self.avgpool(x)
         x = torch.flatten(x, 1)
         x = self.dropout(x)

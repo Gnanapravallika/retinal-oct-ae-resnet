@@ -6,9 +6,20 @@ import torch.optim as optim
 from torch.utils.data import DataLoader, WeightedRandomSampler
 import pandas as pd
 import numpy as np
+from sklearn.metrics import f1_score
 from src.models.ae_resnet import AEResNet
 from src.dataset.dataset import RetinalDataset, patient_level_split, auto_detect_columns
 from src.preprocessing.standardizer import RetinalPipelineTransform
+
+def print_split_distributions(train_df, val_df, classes=7):
+    print("\n--- Split Class Distributions ---")
+    print(f"{'Class':<10} | {'Train':<8} | {'Val':<8}")
+    print("-" * 35)
+    for idx in range(classes):
+        tr = sum(train_df['label'] == idx)
+        vl = sum(val_df['label'] == idx)
+        print(f"{idx:<10} | {tr:<8} | {vl:<8}")
+    print("-" * 35)
 
 def run_training_simulation():
     """
@@ -61,6 +72,7 @@ def train_model(model_name: str = "ae-resnet", csv_path: str = None, epochs: int
         df['image_path'] = df['image_path'].apply(convert_path_to_colab)
         
     train_df, val_df, _ = patient_level_split(df)
+    print_split_distributions(train_df, val_df)
     
     train_transform = RetinalPipelineTransform(is_training=True)
     val_transform = RetinalPipelineTransform(is_training=False)
@@ -92,25 +104,29 @@ def train_model(model_name: str = "ae-resnet", csv_path: str = None, epochs: int
     
     criterion = nn.CrossEntropyLoss()
     
-    # Differential learning rates: lower for pre-trained backbone, higher for randomly initialized blocks (csa & fc)
-    backbone_params = []
-    new_layers_params = []
-    for name, param in model.named_parameters():
-        if 'csa' in name or 'fc' in name:
-            new_layers_params.append(param)
-        else:
-            backbone_params.append(param)
-            
-    optimizer = optim.AdamW([
-        {'params': backbone_params, 'lr': 1e-5},
-        {'params': new_layers_params, 'lr': 1e-4}
-    ], weight_decay=1e-4)
+    # Differential learning rates: lower for pre-trained backbone, higher for randomly initialized blocks
+    if model_name.lower() == "ae-resnet":
+        backbone_params = []
+        new_layers_params = []
+        for name, param in model.named_parameters():
+            if 'csa' in name or 'fc' in name or 'fusion' in name:
+                new_layers_params.append(param)
+            else:
+                backbone_params.append(param)
+                
+        optimizer = optim.AdamW([
+            {'params': backbone_params, 'lr': 1e-5},
+            {'params': new_layers_params, 'lr': 1e-4}
+        ], weight_decay=1e-4)
+    else:
+        optimizer = optim.AdamW(model.parameters(), lr=1e-5, weight_decay=1e-4)
     
     # Cosine Annealing learning rate scheduler
     scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=epochs)
     
     print(f"Training {model_name} for {epochs} epochs on {device}...")
     best_val_acc = 0.0
+    best_val_f1 = 0.0
     best_val_loss = float('inf')
     patience = 10
     patience_counter = 0
@@ -118,6 +134,19 @@ def train_model(model_name: str = "ae-resnet", csv_path: str = None, epochs: int
     os.makedirs("models", exist_ok=True)
     
     for epoch in range(1, epochs + 1):
+        if model_name.lower() == "ae-resnet":
+            if epoch <= 3:
+                for name, param in model.named_parameters():
+                    if not ('csa' in name or 'fc' in name or 'fusion' in name):
+                        param.requires_grad = False
+                if epoch == 1:
+                    print("Epoch 1-3 Warm-up: AE-ResNet Backbone frozen (training CSA, Fusion & FC heads only)")
+            else:
+                for param in model.parameters():
+                    param.requires_grad = True
+                if epoch == 4:
+                    print("Epoch 4: AE-ResNet Backbone unfrozen, full network training")
+                
         model.train()
         running_loss, correct, total = 0.0, 0, 0
         for images, labels in train_loader:
@@ -138,6 +167,8 @@ def train_model(model_name: str = "ae-resnet", csv_path: str = None, epochs: int
         # Validation
         model.eval()
         val_loss, val_correct, val_total = 0.0, 0, 0
+        all_preds = []
+        all_labels = []
         with torch.no_grad():
             for images, labels in val_loader:
                 images, labels = images.to(device), labels.to(device)
@@ -147,9 +178,12 @@ def train_model(model_name: str = "ae-resnet", csv_path: str = None, epochs: int
                 _, preds = torch.max(outputs, 1)
                 val_correct += (preds == labels).sum().item()
                 val_total += labels.size(0)
+                all_preds.extend(preds.cpu().numpy())
+                all_labels.extend(labels.cpu().numpy())
                 
         epoch_val_loss = val_loss / val_total
         epoch_val_acc = val_correct / val_total
+        epoch_val_f1 = f1_score(all_labels, all_preds, average='macro')
         
         # Accumulate history log
         history.append({
@@ -157,10 +191,11 @@ def train_model(model_name: str = "ae-resnet", csv_path: str = None, epochs: int
             'train_loss': epoch_loss,
             'train_acc': epoch_acc,
             'val_loss': epoch_val_loss,
-            'val_acc': epoch_val_acc
+            'val_acc': epoch_val_acc,
+            'val_f1': epoch_val_f1
         })
         
-        print(f"Epoch {epoch}/{epochs} | Loss: {epoch_loss:.4f} Acc: {epoch_acc:.4f} | Val Loss: {epoch_val_loss:.4f} Acc: {epoch_val_acc:.4f}")
+        print(f"Epoch {epoch}/{epochs} | Loss: {epoch_loss:.4f} Acc: {epoch_acc:.4f} | Val Loss: {epoch_val_loss:.4f} Acc: {epoch_val_acc:.4f} F1: {epoch_val_f1:.4f}")
         
         # Step the learning rate scheduler
         scheduler.step()
@@ -172,10 +207,10 @@ def train_model(model_name: str = "ae-resnet", csv_path: str = None, epochs: int
         else:
             patience_counter += 1
             
-        if epoch_val_acc > best_val_acc:
-            best_val_acc = epoch_val_acc
+        if epoch_val_f1 > best_val_f1:
+            best_val_f1 = epoch_val_f1
             torch.save(model.state_dict(), f"models/{model_name}_best.pth")
-            print(f"\u2705 Best model updated! Val Acc: {best_val_acc:.4f}")
+            print(f"\u2705 Best model updated! Val Macro F1: {best_val_f1:.4f}")
             
         if patience_counter >= patience:
             print(f"Early stopping triggered at Epoch {epoch} due to validation loss plateau.")
