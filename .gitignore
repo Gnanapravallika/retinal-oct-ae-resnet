@@ -107,3 +107,15 @@ check_dataset.py
 check_all_datasets.py
 *.zip
 
+# Ignore legacy reviews, notebooks, resumes, and scratch scripts
+*.pptx
+*.ipynb
+read_cells.py
+run_colab.py
+gnanapravallika_resume.md
+project_specifications.md
+extracted_results/
+extracted_results_7/
+extracted_results_exp03/
+tables/
+
