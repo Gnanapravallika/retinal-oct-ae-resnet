@@ -1,10 +1,8 @@
-torch --index-url https://download.pytorch.org/whl/cpu
-torchvision --index-url https://download.pytorch.org/whl/cpu
-fastapi>=0.95.0
-uvicorn>=0.20.0
-pydantic>=1.10.0
-opencv-python-headless>=4.7.0.72
-pandas>=1.5.0
-numpy>=1.22.0
-pillow>=9.4.0
-jinja2>=3.1.2
+torch
+torchvision
+pandas
+numpy
+scikit-learn
+pillow
+matplotlib
+scipy
