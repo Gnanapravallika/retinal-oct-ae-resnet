@@ -91,7 +91,7 @@ def train_model_v2(model_name: str = "ae-resnet-v2", csv_path: str = None, epoch
         model = AEResNetV2(num_classes=7, pretrained=True, use_attention=True, use_adaptive=False)
     elif model_name_lower == "resnet_amsf":
         model = AEResNetV2(num_classes=7, pretrained=True, use_attention=False, use_adaptive=True)
-    elif model_name_lower in ["ae_resnet_v2", "ae_resnet_project"]:
+    elif model_name_lower in ["ae_resnet_v2", "ae_resnet_project", "ae_resnet"]:
         model = AEResNetV2(num_classes=7, pretrained=True, use_attention=True, use_adaptive=True)
     else:
         raise ValueError(f"Unknown model name configuration: {model_name}")
