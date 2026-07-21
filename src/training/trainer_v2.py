@@ -81,6 +81,14 @@ def train_model_v2(model_name: str = "ae-resnet-v2", csv_path: str = None, epoch
         import torchvision.models as models
         model = models.resnet50(weights=models.ResNet50_Weights.DEFAULT)
         model.fc = nn.Linear(model.fc.in_features, 7)
+    elif model_name_lower == "densenet121":
+        import torchvision.models as models
+        model = models.densenet121(weights=models.DenseNet121_Weights.DEFAULT)
+        model.classifier = nn.Linear(model.classifier.in_features, 7)
+    elif model_name_lower in ["efficientnet_b0", "efficientnet-b0"]:
+        import torchvision.models as models
+        model = models.efficientnet_b0(weights=models.EfficientNet_B0_Weights.DEFAULT)
+        model.classifier[1] = nn.Linear(model.classifier[1].in_features, 7)
     elif model_name_lower == "resnet_fixed_fusion":
         model = AEResNetV2(num_classes=7, pretrained=True, use_attention=False, use_adaptive=False)
     elif model_name_lower == "ae_resnet_v1":
@@ -92,8 +100,9 @@ def train_model_v2(model_name: str = "ae-resnet-v2", csv_path: str = None, epoch
     else:
         raise ValueError(f"Unknown model name configuration: {model_name}")
         
-    # If domain-pretraining was completed (Stage 2) and not standard resnet50, load backbone weights
-    if model_name_lower != "resnet50":
+    # If domain-pretraining was completed (Stage 2) and not a baseline, load backbone weights
+    baselines = ["resnet50", "densenet121", "efficientnet_b0", "efficientnet-b0"]
+    if model_name_lower not in baselines:
         pretrained_backbone_path = "models/ae_resnet_v2_backbone_pretrained.pth"
         if os.path.exists(pretrained_backbone_path):
             print(f"Loading domain-pretrained backbone weights from: {pretrained_backbone_path}")
@@ -109,6 +118,12 @@ def train_model_v2(model_name: str = "ae-resnet-v2", csv_path: str = None, epoch
     if model_name_lower == "resnet50":
         for name, param in model.named_parameters():
             if 'fc' in name:
+                new_layers_params.append(param)
+            else:
+                backbone_params.append(param)
+    elif model_name_lower in ["densenet121", "efficientnet_b0", "efficientnet-b0"]:
+        for name, param in model.named_parameters():
+            if 'classifier' in name:
                 new_layers_params.append(param)
             else:
                 backbone_params.append(param)
