@@ -57,12 +57,14 @@ def get_model_v2(model_name: str, num_classes: int = 7, pretrained: bool = False
     model_name_lower = model_name.lower().replace("-", "_")
     if model_name_lower == "resnet50":
         import torchvision.models as models
-        model = models.resnet50(pretrained=pretrained)
+        weights = models.ResNet50_Weights.DEFAULT if pretrained else None
+        model = models.resnet50(weights=weights)
         model.fc = nn.Linear(model.fc.in_features, num_classes)
         return model
     elif model_name_lower == "densenet121":
         import torchvision.models as models
-        model = models.densenet121(pretrained=pretrained)
+        weights = models.DenseNet121_Weights.DEFAULT if pretrained else None
+        model = models.densenet121(weights=weights)
         model.classifier = nn.Linear(model.classifier.in_features, num_classes)
         return model
     elif model_name_lower == "resnet_fixed_fusion":
