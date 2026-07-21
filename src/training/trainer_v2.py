@@ -76,13 +76,28 @@ def train_model_v2(model_name: str = "ae-resnet-v2", csv_path: str = None, epoch
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     
     # Load model dynamically
-    model = AEResNetV2(num_classes=7, pretrained=True)
-    
-    # If domain-pretraining was completed (Stage 2), load backbone weights
-    pretrained_backbone_path = "models/ae_resnet_v2_backbone_pretrained.pth"
-    if os.path.exists(pretrained_backbone_path):
-        print(f"Loading domain-pretrained backbone weights from: {pretrained_backbone_path}")
-        model.load_state_dict(torch.load(pretrained_backbone_path), strict=False)
+    model_name_lower = model_name.lower().replace("-", "_")
+    if model_name_lower == "resnet50":
+        import torchvision.models as models
+        model = models.resnet50(weights=models.ResNet50_Weights.DEFAULT)
+        model.fc = nn.Linear(model.fc.in_features, 7)
+    elif model_name_lower == "resnet_fixed_fusion":
+        model = AEResNetV2(num_classes=7, pretrained=True, use_attention=False, use_adaptive=False)
+    elif model_name_lower == "ae_resnet_v1":
+        model = AEResNetV2(num_classes=7, pretrained=True, use_attention=True, use_adaptive=False)
+    elif model_name_lower == "resnet_amsf":
+        model = AEResNetV2(num_classes=7, pretrained=True, use_attention=False, use_adaptive=True)
+    elif model_name_lower in ["ae_resnet_v2", "ae_resnet_project"]:
+        model = AEResNetV2(num_classes=7, pretrained=True, use_attention=True, use_adaptive=True)
+    else:
+        raise ValueError(f"Unknown model name configuration: {model_name}")
+        
+    # If domain-pretraining was completed (Stage 2) and not standard resnet50, load backbone weights
+    if model_name_lower != "resnet50":
+        pretrained_backbone_path = "models/ae_resnet_v2_backbone_pretrained.pth"
+        if os.path.exists(pretrained_backbone_path):
+            print(f"Loading domain-pretrained backbone weights from: {pretrained_backbone_path}")
+            model.load_state_dict(torch.load(pretrained_backbone_path), strict=False)
             
     model = model.to(device)
     criterion = nn.CrossEntropyLoss()
@@ -90,12 +105,20 @@ def train_model_v2(model_name: str = "ae-resnet-v2", csv_path: str = None, epoch
     # Differential learning rates
     backbone_params = []
     new_layers_params = []
-    for name, param in model.named_parameters():
-        if 'attention' in name or 'classifier' in name or 'fusion' in name:
-            new_layers_params.append(param)
-        else:
-            backbone_params.append(param)
-            
+    
+    if model_name_lower == "resnet50":
+        for name, param in model.named_parameters():
+            if 'fc' in name:
+                new_layers_params.append(param)
+            else:
+                backbone_params.append(param)
+    else:
+        for name, param in model.named_parameters():
+            if 'attention' in name or 'classifier' in name or 'fusion' in name or 'projection' in name:
+                new_layers_params.append(param)
+            else:
+                backbone_params.append(param)
+                
     optimizer = optim.AdamW([
         {'params': backbone_params, 'lr': 1e-5},
         {'params': new_layers_params, 'lr': 1e-4}
@@ -104,7 +127,7 @@ def train_model_v2(model_name: str = "ae-resnet-v2", csv_path: str = None, epoch
     # Cosine Annealing learning rate scheduler
     scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=epochs)
     
-    print(f"Training AE-ResNet v2 for {epochs} epochs on {device}...")
+    print(f"Training {model_name} for {epochs} epochs on {device}...")
     best_val_f1 = 0.0
     best_val_loss = float('inf')
     patience = 10
@@ -113,17 +136,18 @@ def train_model_v2(model_name: str = "ae-resnet-v2", csv_path: str = None, epoch
     os.makedirs("models", exist_ok=True)
     
     for epoch in range(1, epochs + 1):
-        if epoch <= 3:
-            for name, param in model.named_parameters():
-                if not ('attention' in name or 'classifier' in name or 'fusion' in name):
-                    param.requires_grad = False
-            if epoch == 1:
-                print("Epoch 1-3 Warm-up: AE-ResNet v2 Backbone frozen (training Attention, Fusion & Classifier heads only)")
-        else:
-            for param in model.parameters():
-                param.requires_grad = True
-            if epoch == 4:
-                print("Epoch 4: AE-ResNet v2 Backbone unfrozen, full network training")
+        if model_name_lower != "resnet50":
+            if epoch <= 3:
+                for name, param in model.named_parameters():
+                    if not ('attention' in name or 'classifier' in name or 'fusion' in name or 'projection' in name):
+                        param.requires_grad = False
+                if epoch == 1:
+                    print(f"Epoch 1-3 Warm-up: {model_name} Backbone frozen (training new layers only)")
+            else:
+                for param in model.parameters():
+                    param.requires_grad = True
+                if epoch == 4:
+                    print(f"Epoch 4: {model_name} Backbone unfrozen, full network training")
                 
         model.train()
         running_loss, correct, total = 0.0, 0, 0
@@ -184,8 +208,8 @@ def train_model_v2(model_name: str = "ae-resnet-v2", csv_path: str = None, epoch
             
         if epoch_val_f1 > best_val_f1:
             best_val_f1 = epoch_val_f1
-            torch.save(model.state_dict(), "models/ae_resnet_v2_best.pth")
-            print(f"\u2705 Best model updated! Val Macro F1: {best_val_f1:.4f}")
+            torch.save(model.state_dict(), f"models/{model_name_lower}_best.pth")
+            print(f"✅ Best model updated! Val Macro F1: {best_val_f1:.4f}")
             
         if patience_counter >= patience:
             print(f"Early stopping triggered at Epoch {epoch} due to validation loss plateau.")
@@ -194,6 +218,6 @@ def train_model_v2(model_name: str = "ae-resnet-v2", csv_path: str = None, epoch
     # Save training history to CSV
     os.makedirs("results/logs", exist_ok=True)
     history_df = pd.DataFrame(history)
-    history_df.to_csv("results/logs/ae_resnet_v2_history.csv", index=False)
-    print("Saved training history to results/logs/ae_resnet_v2_history.csv")
-    print(f"Training Complete. Best Validation Macro F1 for AE-ResNet v2: {best_val_f1:.4f}")
+    history_df.to_csv(f"results/logs/{model_name_lower}_history.csv", index=False)
+    print(f"Saved training history to results/logs/{model_name_lower}_history.csv")
+    print(f"Training Complete. Best Validation Macro F1 for {model_name}: {best_val_f1:.4f}")
