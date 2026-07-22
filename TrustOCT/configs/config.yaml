@@ -6,8 +6,8 @@ dataset:
   image_size: 224
   batch_size: 32
   num_workers: 4
-  num_classes: 7
-  classes: ["amd", "dme", "erm", "no", "rao", "rvo", "vid"]
+  num_classes: 4
+  classes: ["cnv", "dme", "drusen", "normal"]
 
 model:
   backbone: "resnet50"          # Options: resnet50, densenet121, vit

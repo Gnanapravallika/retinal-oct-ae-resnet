@@ -20,14 +20,14 @@ def verify_compilation():
         attention_module="identity",
         dg_module="identity",
         head_name="softmax",
-        num_classes=7,
+        num_classes=4,
         pretrained=False
     ).to(device)
     
     # Run mock forward pass
     x = torch.randn(2, 3, 224, 224, device=device)
     y_softmax = model_softmax(x)
-    assert y_softmax.shape == (2, 7), f"Expected shape (2, 7), got {y_softmax.shape}"
+    assert y_softmax.shape == (2, 4), f"Expected shape (2, 4), got {y_softmax.shape}"
     
     # Backward pass check
     y_softmax.sum().backward()
@@ -41,13 +41,13 @@ def verify_compilation():
         attention_module="cbam",
         dg_module="mixstyle",
         head_name="evidential",
-        num_classes=7,
+        num_classes=4,
         pretrained=False
     ).to(device)
     
     # Run mock forward pass
     y_evidential = model_evidential(x)
-    assert y_evidential.shape == (2, 7), f"Expected shape (2, 7), got {y_evidential.shape}"
+    assert y_evidential.shape == (2, 4), f"Expected shape (2, 4), got {y_evidential.shape}"
     assert torch.all(y_evidential >= 1.0), "Dirichlet parameters alpha must be >= 1.0"
     
     # Backward pass check

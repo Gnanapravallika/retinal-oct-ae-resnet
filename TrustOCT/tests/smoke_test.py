@@ -26,7 +26,7 @@ def run_smoke_test():
     # Generate synthetic images and records
     num_samples = 4
     records = []
-    classes = ["amd", "dme", "erm", "no", "rao", "rvo", "vid"]
+    classes = ["cnv", "dme", "drusen", "normal"]
     
     print("Generating synthetic image B-scans...")
     for idx in range(num_samples):
@@ -51,7 +51,7 @@ def run_smoke_test():
     # 2. Mock configuration
     config = {
         "dataset": {
-            "num_classes": 7
+            "num_classes": 4
         },
         "model": {
             "backbone": "resnet50",
@@ -86,7 +86,7 @@ def run_smoke_test():
     val_loader = DataLoader(val_dataset, batch_size=2, shuffle=False)
     
     # 4. Losses & Training setup
-    criterion = get_loss_function("evidential", num_classes=7)
+    criterion = get_loss_function("evidential", num_classes=4)
     output_dir = os.path.join(temp_dir, "outputs")
     
     print("Running 1 epoch training smoke test...")
