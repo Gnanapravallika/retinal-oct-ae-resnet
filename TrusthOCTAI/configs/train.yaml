@@ -1,4 +1,4 @@
-# TrusthOCTAI Training Hyperparameters Configuration
+# TrusthOCTAI Training Hyperparameters Configuration (3 Core Models)
 
 training:
   epochs: 30
@@ -12,5 +12,5 @@ training:
   device: "cuda"
 
 output:
-  dir: "outputs/trustoct"
+  dir: "outputs/msf_cbam_resnet50"
   save_best_only: true
