@@ -1,6 +1,5 @@
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 from models.resnet50 import ResNet50Backbone
 from models.msf import MultiScaleFusion
 from models.cbam import CBAM
@@ -15,7 +14,7 @@ class SoftmaxHead(nn.Module):
 
 class Model2_MSF_CBAM_ResNet50(nn.Module):
     """
-    Model 2 / Proposed Model matching saved checkpoint weights state_dict keys.
+    Model 2 / Proposed Model matching saved checkpoint weights state_dict keys perfectly.
     """
     def __init__(self, num_classes: int = 4, pretrained: bool = True):
         super().__init__()
